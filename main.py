@@ -7,11 +7,13 @@ from typing import Any, Dict
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import f1_score
 from importlib.util import spec_from_file_location, module_from_spec
-from hdc import HDTransform
 from data import load_mnist
 from ml_collections import ConfigDict
 from tqdm import tqdm
+
+import hdc
 from hdc.mmhdc import MultiMMHDC
+from hdc import HDTransform
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Path to configuration.")
@@ -143,7 +145,6 @@ def main(_):
                 batch_X = X_train_hd_shuf[i:i + config.training.batch_size].to(model.device)
                 batch_y = y_train_shuf[i:i + config.training.batch_size].to(model.device)
                 model.step(batch_X, batch_y)
-                # step_fn(model, batch_X, batch_y)
 
             if epoch % config.training.eval_every == 0:
                 metrics = evaluate_model(model, X_test_hd, y_test_exp)

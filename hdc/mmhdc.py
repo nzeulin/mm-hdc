@@ -1,12 +1,14 @@
 import torch
 from torch.nn.functional import relu
+from . import _mmhdc_cpp
 
 class MultiMMHDC(torch.nn.Module):
     def __init__(self, num_classes: int, 
                  out_channels: int, 
                  lr: float = 1e-2, 
                  C: float = 1.0, 
-                 device: str = 'cpu'):
+                 device: str = 'cpu',
+                 backend: str = 'cpp'):
         
         super().__init__()
         self.num_classes = num_classes
@@ -14,6 +16,7 @@ class MultiMMHDC(torch.nn.Module):
         self.lr = lr
         self.device = device
         self.C = C
+        self.backend = backend
         self.prototypes = torch.nn.parameter.Parameter(
             data=torch.zeros(num_classes, out_channels, dtype=torch.float32, device=device), 
             requires_grad=False
@@ -24,7 +27,6 @@ class MultiMMHDC(torch.nn.Module):
     
     # Initialization of prototypes
     def initialize(self, x: torch.Tensor, y: torch.Tensor):
-        # return None
         for i in range(self.num_classes):
             self.prototypes[i] = torch.mean(x[y.squeeze() == i], 0)
 
@@ -38,8 +40,14 @@ class MultiMMHDC(torch.nn.Module):
             loss += torch.sum(relu(2 - X[y == cls1] @ (self.prototypes[cls1] - self.prototypes).T))
 
         return loss
-
+    
     def step(self, x: torch.Tensor, y: torch.Tensor):
+        if self.backend == 'cpp':
+            return _mmhdc_cpp.step(x, y, self.prototypes, self.lr, self.C)
+        elif self.backend == 'python':
+            return self._py_step(x, y)
+
+    def _py_step(self, x: torch.Tensor, y: torch.Tensor):
         # Computing hinge loss
         prototypes_update = torch.zeros_like(self.prototypes)
 
@@ -50,7 +58,7 @@ class MultiMMHDC(torch.nn.Module):
 
             dot = x_cls @ (rolled_prototypes[0] - rolled_prototypes[1:]).T
             hinge_loss = relu(2 - dot)
-            
+
             exceeding_margin = hinge_loss > 0
             idx_wrong = exceeding_margin.any(-1)
             prototypes_update[cls] += x_cls[idx_wrong].sum(0)
