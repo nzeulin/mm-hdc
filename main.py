@@ -72,6 +72,7 @@ def main(_):
     checkpoints_dir = config.paths.checkpoints
     checkpoints_meta_dir = config.paths.checkpoints_meta
     results_dir = config.paths.results
+    dtype = config.dtype
 
     os.makedirs(checkpoints_dir, exist_ok=True)
     os.makedirs(checkpoints_meta_dir, exist_ok=True)
@@ -79,8 +80,8 @@ def main(_):
 
     # Load and preprocess data
     X_train, y_train, X_test, y_test = load_mnist(config.dataset.name)
-    X_train = torch.tensor(X_train, dtype=torch.float32)
-    X_test = torch.tensor(X_test, dtype=torch.float32)
+    X_train = torch.tensor(X_train, dtype=dtype)
+    X_test = torch.tensor(X_test, dtype=dtype)
 
     lbl_enc = LabelEncoder().fit(y_train)
     y_train = torch.tensor(lbl_enc.transform(y_train), dtype=torch.int64)
@@ -104,7 +105,8 @@ def main(_):
             seed=exp_i,
             batch_norm=False,
             device=config.device,
-            transform_type=config.dataset.mapping
+            transform_type=config.dataset.mapping,
+            dtype=dtype,
         )
         X_train_hd = hd_transform(X_train_flat)
         X_test_hd = hd_transform(X_test_flat).to(config.device)
@@ -118,7 +120,8 @@ def main(_):
             lr=model_config.learning_rate,
             C=model_config.C,
             device=config.device,
-            backend=model_config.backend)
+            backend=model_config.backend,
+            dtype=dtype,)
         model.initialize(X_train_hd, y_train_exp)
 
         # Training loop

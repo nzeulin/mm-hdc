@@ -13,7 +13,8 @@ class HDTransform():
         batch_size: int = 4096,
         batch_norm: bool = False,
         device: str = 'cpu',
-        transform_type: str = 'onlinehd'):
+        transform_type: str = 'onlinehd',
+        dtype: torch.dtype = torch.float32,):
 
         super().__init__()
         self.in_channels = in_channels
@@ -24,8 +25,8 @@ class HDTransform():
         self.transform_type = transform_type
 
         self._rng = np.random.default_rng(seed)
-        self._G = torch.tensor(self._rng.normal(size=(in_channels, out_channels)), dtype=torch.float32, device=self.device)
-        self._phi = torch.tensor(self._rng.uniform(0, 2*np.pi, size=out_channels), dtype=torch.float32, device=self.device)
+        self._G = torch.tensor(self._rng.normal(size=(in_channels, out_channels)), dtype=dtype, device=self.device)
+        self._phi = torch.tensor(self._rng.uniform(0, 2*np.pi, size=out_channels), dtype=dtype, device=self.device)
 
     def _transform(self, x: torch.Tensor, projected: bool = False, **kwargs):
         buf1 = torch.mm(x, self._G) if not projected else x
@@ -62,18 +63,18 @@ class HDTransform():
 
         dataset = torch.utils.data.TensorDataset(data, data_id)
         loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
-        x_new = torch.zeros(data.size(0), self.out_channels)
+        x_new = torch.zeros(data.size(0), self.out_channels, dtype=self._G.dtype)
 
         for batch, batch_id in loader:
             batch = batch.to(self.device)
-            eps = 1e-8 * torch.ones(batch.size(1), device=self.device)
+            eps = 1e-8 * torch.ones(batch.size(1), device=self.device, dtype=batch.dtype)
 
             # Don't forget to normalize data            
             batch = batch / torch.maximum(eps, torch.norm(batch, dim=1, keepdim=True))
 
             # This trick can really make difference 
             if self.batch_norm:
-                eps = 1e-8 * torch.ones(batch.size(0), 1, device=self.device)
+                eps = 1e-8 * torch.ones(batch.size(0), 1, device=self.device, dtype=batch.dtype)
                 batch = batch / torch.maximum(eps, torch.norm(batch, dim=0))
 
             x_new[batch_id] = self._transform(batch, **kwargs).detach().cpu()

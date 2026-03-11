@@ -1,3 +1,4 @@
+import torch
 from ml_collections import ConfigDict
 from torch.cuda import is_available as cuda_available
 import os
@@ -40,5 +41,6 @@ def get_config():
 
     # Device
     config.device = 'cuda'
+    config.dtype = torch.float32
 
     return config

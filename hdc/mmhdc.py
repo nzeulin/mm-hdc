@@ -34,7 +34,7 @@ class MultiMMHDC(torch.nn.Module):
                 self.prototypes[i] = torch.mean(x[y.squeeze() == i], 0).to(self.device)
 
             # Normalizing prototypes
-            eps = 1e-8 * torch.ones(self.prototypes.size(0), 1, device=self.prototypes.device)
+            eps = 1e-8 * torch.ones(self.prototypes.size(0), 1, device=self.prototypes.device, dtype=self.dtype)
             self.prototypes /= torch.maximum(eps, torch.norm(self.prototypes, dim=1, keepdim=True))
 
         def _initialize_int(x: torch.Tensor, y: torch.Tensor):
