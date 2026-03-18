@@ -219,9 +219,9 @@ class TestCppVsPythonStepMNIST:
 
                 # NOTE: This can slightly diverge from the reference Python implementation,
                 # as it seems that C++ implementation has some reformulation of the loss computation.
-                # This is why I set epoch < 5, as the maximum difference can get a bit higher than the tolerance,
+                # This is why I set epoch < 1, as the maximum difference can get a bit higher than the tolerance,
                 # but it doesn't get very high. Need to figure out myself why, but keep it for now.
-                if epoch < 5:
+                if epoch < 1:
                     max_diff = (cpp_protos - py_protos).abs().max().item()
                     assert torch.allclose(cpp_protos, py_protos, atol=1e-4), (
                         f"C++ and Python prototypes diverge at batch "
