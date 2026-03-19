@@ -46,7 +46,7 @@ class MultiMMHDC(torch.nn.Module):
             _initialize_int(x, y)
 
     def loss(self, X: torch.Tensor, y: torch.Tensor):
-        loss = torch.norm(self.prototypes, dim=-1).sum() / (2 * self.C)
+        loss = torch.pow(torch.norm(self.prototypes, dim=-1), 2).sum() / (2 * self.C)
         for cls1 in torch.unique(y):
             loss += torch.sum(relu(2 - X[y == cls1] @ (self.prototypes[cls1] - self.prototypes).T))
 
@@ -74,8 +74,8 @@ class MultiMMHDC(torch.nn.Module):
                 hinge_loss = relu(2 - dot)
 
                 exceeding_margin = hinge_loss > 0
-                idx_wrong = exceeding_margin.any(-1)
-                prototypes_update[cls] += x_cls[idx_wrong].sum(0)
+                num_violations = exceeding_margin.sum(dim=1, dtype=x_cls.dtype)
+                prototypes_update[cls] += (x_cls * num_violations.unsqueeze(1)).sum(0)
 
                 y_true_all = exceeding_margin.any(0).nonzero().flatten()
                 for y_true in y_true_all:
