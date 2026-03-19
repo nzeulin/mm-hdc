@@ -32,12 +32,11 @@ torch::Tensor step(torch::Tensor &x, torch::Tensor &y, torch::Tensor &prototypes
 
     // Build weight matrix W  (N, K):
     //   W[i, k]   = -1  if sample i violates margin against class k
-    //   W[i, y_i] = +1  if sample i violates at least one margin
-    //               (matches the Python reference: one contribution per sample,
-    //                not one per violated class)
+    //   W[i, y_i] = +m_i where m_i is the number of violated margins for sample i
+    //               (matches Python: each sample contributes once per violated class).
     auto W = -violated.to(x.scalar_type());                        // (N, K)
     W.scatter_add_(1, y.unsqueeze(1),
-                   violated.any(1, /*keepdim=*/true).to(x.scalar_type()));
+                   violated.sum(1, /*keepdim=*/true).to(x.scalar_type()));
 
     // prototypes_update[k] = Σ_i  W[i,k] * x_i  — single GEMM.
     auto prototypes_update = torch::mm(W.t(), x);                  // (K, D)
