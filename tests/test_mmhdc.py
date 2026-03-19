@@ -146,3 +146,6 @@ class TestPrototypesChange:
             assert not torch.equal(
                 model.prototypes.data[cls], prototypes_before[cls]
             ), f"Prototype for class {cls} was never updated"
+
+
+

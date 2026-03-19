@@ -216,17 +216,13 @@ class TestCppVsPythonStepMNIST:
                 t0 = time.perf_counter()
                 cpp_protos = _mmhdc_cpp.step(X_batch, y_batch, cpp_protos.clone(), self.LR, self.C)
                 cpp_total_s += time.perf_counter() - t0
-
-                # NOTE: This can slightly diverge from the reference Python implementation,
-                # as it seems that C++ implementation has some reformulation of the loss computation.
-                # This is why I set epoch < 1, as the maximum difference can get a bit higher than the tolerance,
-                # but it doesn't get very high. Need to figure out myself why, but keep it for now.
-                if epoch < 1:
-                    max_diff = (cpp_protos - py_protos).abs().max().item()
-                    assert torch.allclose(cpp_protos, py_protos, atol=1e-4), (
-                        f"C++ and Python prototypes diverge at batch "
-                        f"{batch_idx + 1}/{num_batches} of the epoch on MNIST data. "
-                        f"Max diff = {max_diff:.3e}"
+                
+                # Making sure that C++ and Python implementations result closely match
+                max_diff = (cpp_protos - py_protos).abs().max().item()
+                assert torch.allclose(cpp_protos, py_protos, atol=1e-4), (
+                    f"C++ and Python prototypes diverge at batch "
+                    f"{batch_idx + 1}/{num_batches} of the epoch on MNIST data. "
+                    f"Max diff = {max_diff:.3e}"
                 )
 
         # Checking speedup from using C++ implementation
@@ -235,4 +231,81 @@ class TestCppVsPythonStepMNIST:
             f"\n  Python  mean: {py_total_s*1e3 / (num_batches*epochs):.1f} ms"
             f"\n  C++     mean: {cpp_total_s*1e3 / (num_batches*epochs):.1f} ms"
             f"\n  Speedup:       {py_total_s / cpp_total_s:.2f}×"
+        )
+
+
+class TestStepMatchesGradientDescent:
+    """
+    Verify that step-based optimisation tracks autograd SGD descending on the same
+    loss function, using the same HD-transformed MNIST batch.
+    """
+
+    NUM_CLASSES = _MAIN_CFG.dataset.num_classes
+    MODEL_DIM   = _MAIN_CFG.dataset.model_dim
+    LR          = _HDC_CFG.learning_rate
+    C           = float(_HDC_CFG.C)
+
+    def _make_py_model(self):
+        from hdc.mmhdc import MultiMMHDC
+        return MultiMMHDC(
+            num_classes=self.NUM_CLASSES,
+            out_channels=self.MODEL_DIM,
+            lr=self.LR,
+            C=self.C,
+            backend="python",
+            device='cuda' if torch.cuda.is_available() else 'cpu',
+            dtype=torch.float32,
+        )
+
+    def test_step_and_gradient_descent_losses_match(self, mnist_hd_data):
+        """
+        After each step-based update and each SGD update (both starting from the
+        same initial prototypes), the losses evaluated on the same batch should be
+        numerically identical — confirming that the closed-form step is the exact
+        subgradient descent rule for the hinge loss objective.
+        """
+        X_hd, y = mnist_hd_data
+        batch_size = _MAIN_CFG.training.batch_size
+        X_batch = X_hd[:batch_size].to('cuda' if torch.cuda.is_available() else 'cpu')
+        y_batch = y[:batch_size].to('cuda' if torch.cuda.is_available() else 'cpu')
+
+        model_step = self._make_py_model()
+        model_step.initialize(X_hd, y)
+
+        model_gd = self._make_py_model()
+        model_gd.prototypes = torch.nn.Parameter(
+            model_step.prototypes.detach().clone(),
+            requires_grad=True,
+        )
+        optimizer = torch.optim.SGD([model_gd.prototypes], lr=self.LR)
+
+        num_steps = 50
+        step_losses = []
+        gd_losses   = []
+
+        for _ in range(num_steps):
+            # Step-based path.
+            model_step.step(X_batch, y_batch)
+            step_losses.append(model_step.loss(X_batch, y_batch).detach())
+
+            # SGD path on the same objective.
+            optimizer.zero_grad()
+            model_gd.loss(X_batch, y_batch).backward()
+            optimizer.step()
+            gd_losses.append(model_gd.loss(X_batch, y_batch).detach())
+
+        step_losses_t = torch.stack(step_losses)
+        gd_losses_t   = torch.stack(gd_losses)
+        abs_diff_t    = (step_losses_t - gd_losses_t).abs()
+
+        print("\n[step-vs-sgd] loss table")
+        print("step | step_loss      | sgd_loss       | abs_diff")
+        print("-----+----------------+----------------+----------------")
+        for idx, (s, g, d) in enumerate(zip(step_losses_t, gd_losses_t, abs_diff_t), start=1):
+            print(f"{idx:>4} | {s.item():>14.6f} | {g.item():>14.6f} | {d.item():>14.6f}")
+        print(f"[step-vs-sgd] max abs diff: {abs_diff_t.max().item():.3e}")
+
+        assert torch.allclose(step_losses_t, gd_losses_t, atol=1e-4, rtol=1e-4), (
+            "Step-based and gradient-descent losses diverge. "
+            f"max_abs_diff={abs_diff_t.max().item():.3e}"
         )
