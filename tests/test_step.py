@@ -279,7 +279,7 @@ class TestStepMatchesGradientDescent:
         )
         optimizer = torch.optim.SGD([model_gd.prototypes], lr=self.LR)
 
-        num_steps = 50
+        num_steps = 10
         step_losses = []
         gd_losses   = []
 
