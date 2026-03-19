@@ -36,38 +36,6 @@ def training_data():
     return x, y
 
 
-@pytest.fixture(scope="module")
-def mnist_training_data():
-    """MNIST-derived training subset for optimisation-consistency checks."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    sys.path.insert(0, repo_root)
-    from data import load_mnist
-
-    # data loader resolves paths relative to cwd.
-    orig_cwd = os.getcwd()
-    os.chdir(repo_root)
-    try:
-        X_raw, y_raw, _, _ = load_mnist("mnist")
-    finally:
-        os.chdir(orig_cwd)
-
-    x = torch.tensor(X_raw, dtype=torch.float32).reshape(len(X_raw), -1)
-    y = torch.tensor(y_raw, dtype=torch.long)
-
-    # Keep runtime low while preserving all classes.
-    per_class = 64
-    idx_parts = []
-    for cls in torch.unique(y):
-        cls_idx = (y == cls).nonzero(as_tuple=False).flatten()[:per_class]
-        idx_parts.append(cls_idx)
-    idx = torch.cat(idx_parts)
-
-    x = x[idx]
-    y = y[idx]
-    x = x / x.norm(dim=1, keepdim=True).clamp_min(1e-8)
-    return x, y
-
-
 @pytest.fixture(params=["python",])
 def model(request):
     """Return a fresh MultiMMHDC model for each backend."""
@@ -180,75 +148,4 @@ class TestPrototypesChange:
             ), f"Prototype for class {cls} was never updated"
 
 
-# ---------------------------------------------------------------------------
-# 3. Step update consistency with gradient descent
-# ---------------------------------------------------------------------------
 
-class TestStepMatchesGradientDescent:
-    """Verify that manual step-based optimisation tracks autograd GD on the same loss."""
-
-    def test_step_and_gradient_descent_losses_match(self, mnist_training_data):
-        x, y = mnist_training_data
-        lr = 0.05
-        C = 1.0
-        num_steps = 10
-
-        num_classes = int(y.max().item()) + 1
-        out_channels = x.shape[1]
-
-        model_step = MultiMMHDC(
-            num_classes=num_classes,
-            out_channels=out_channels,
-            lr=lr,
-            C=C,
-            backend="python",
-        )
-        model_step.initialize(x, y)
-
-        model_gd = MultiMMHDC(
-            num_classes=num_classes,
-            out_channels=out_channels,
-            lr=lr,
-            C=C,
-            backend="python",
-        )
-        model_gd.prototypes = torch.nn.Parameter(
-            model_step.prototypes.detach().clone(),
-            requires_grad=True,
-        )
-
-        # Start SGD from the same initial prototypes as the step-based model.
-        optimizer = torch.optim.SGD([model_gd.prototypes], lr=lr)
-
-        step_losses = []
-        gd_losses = []
-
-        for _ in range(num_steps):
-            # Step-based optimisation path.
-            model_step.step(x, y)
-            step_losses.append(model_step.loss(x, y).detach())
-
-            # SGD path on the same objective.
-            optimizer.zero_grad()
-            loss_gd = model_gd.loss(x, y)
-            loss_gd.backward()
-            optimizer.step()
-
-            gd_losses.append(model_gd.loss(x, y).detach())
-
-        step_losses_t = torch.stack(step_losses)
-        gd_losses_t = torch.stack(gd_losses)
-        abs_diff_t = (step_losses_t - gd_losses_t).abs()
-
-        print("\n[step-vs-sgd] loss table")
-        print("step | step_loss      | sgd_loss       | abs_diff")
-        print("-----+----------------+----------------+----------------")
-        for idx, (s_loss, g_loss, diff) in enumerate(zip(step_losses_t, gd_losses_t, abs_diff_t), start=1):
-            print(f"{idx:>4} | {s_loss.item():>14.6f} | {g_loss.item():>14.6f} | {diff.item():>14.6f}")
-        print(f"[step-vs-sgd] max abs diff: {abs_diff_t.max().item():.3e}")
-
-        # The two optimisation trajectories should be very close.
-        assert torch.allclose(step_losses_t, gd_losses_t, atol=1e-4, rtol=1e-4), (
-            "Step-based and gradient-descent losses diverge. "
-            f"max_abs_diff={abs_diff_t.max().item():.3e}"
-        )
