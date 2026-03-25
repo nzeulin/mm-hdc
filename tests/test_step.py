@@ -7,6 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import hdc  # Triggers C++ code compilation
 from hdc import _mmhdc_cpp
+from hdc.mmhdc import MultiMMHDC, MultiMMHDCInt
 
 
 @pytest.fixture
@@ -302,4 +303,58 @@ class TestStepMatchesGradientDescent:
         assert torch.allclose(step_losses_t, gd_losses_t, atol=1e-4, rtol=1e-4), (
             "Step-based and gradient-descent losses diverge. "
             f"max_abs_diff={abs_diff_t.max().item():.3e}"
+        )
+
+
+def test_integer_training_smoke_monotonic_first_five_epochs():
+    """
+    Smoke test for integer-based training path.
+    Hypervectors are quantized once at the beginning and reused across epochs.
+    During the first 5 epochs, loss should monotonically reduce.
+    """
+    torch.manual_seed(123)
+
+    num_classes = 3
+    out_channels = 16
+    samples_per_class = 24
+
+    xs = []
+    ys = []
+    for cls in range(num_classes):
+        center = torch.zeros(out_channels, dtype=torch.float32)
+        center[cls] = 1.0
+        x_cls = center + 0.03 * torch.randn(samples_per_class, out_channels)
+        xs.append(x_cls)
+        ys.append(torch.full((samples_per_class,), cls, dtype=torch.int64))
+
+    x = torch.cat(xs, dim=0)
+    y = torch.cat(ys, dim=0)
+    x = x / torch.norm(x, dim=1, keepdim=True)
+
+    model = MultiMMHDCInt(
+        num_classes=num_classes,
+        out_channels=out_channels,
+        lr=0.03,
+        C=10.0,
+        backend="python",
+        dtype=torch.int32,
+        hv_bitwidth=4,
+        fixed_point_frac_bits=16,
+    )
+
+    # Quantize once at the beginning (input-only quantization).
+    x_q = model.quantize_hypervectors(x)
+
+    model.initialize(x_q, y)
+
+    losses = []
+    epochs = 8
+    for _ in range(epochs):
+        model.step(x_q, y)
+        losses.append(model.loss(x_q.to(torch.float32), y).item())
+
+    for i in range(4):
+        assert losses[i + 1] <= losses[i] + 1e-6, (
+            "Integer training smoke test failed monotonicity in first 5 epochs: "
+            f"loss[{i}]={losses[i]:.6f}, loss[{i + 1}]={losses[i + 1]:.6f}"
         )

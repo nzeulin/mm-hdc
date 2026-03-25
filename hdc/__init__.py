@@ -9,5 +9,5 @@ _mmhdc_cpp = load(
     sources=[os.path.join(Path(__file__).parent, 'mmhdc.cpp'),]
 )
 
-from hdc.mmhdc import MultiMMHDC
+from hdc.mmhdc import MultiMMHDC, MultiMMHDCInt
 from hdc.transform import HDTransform
