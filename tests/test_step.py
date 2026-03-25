@@ -351,10 +351,74 @@ def test_integer_training_smoke_monotonic_first_five_epochs():
     epochs = 8
     for _ in range(epochs):
         model.step(x_q, y)
-        losses.append(model.loss(x_q.to(torch.float32), y).item())
+        losses.append(model.loss_dequantized(x, y).item())
 
     for i in range(4):
         assert losses[i + 1] <= losses[i] + 1e-6, (
             "Integer training smoke test failed monotonicity in first 5 epochs: "
             f"loss[{i}]={losses[i]:.6f}, loss[{i + 1}]={losses[i + 1]:.6f}"
+        )
+
+
+def test_integer_cpp_step_matches_python_backend():
+    """
+    Integer C++ backend should match integer Python backend across multiple steps.
+    """
+    torch.manual_seed(7)
+
+    num_classes = 4
+    out_channels = 32
+    samples_per_class = 20
+
+    xs = []
+    ys = []
+    for cls in range(num_classes):
+        center = torch.zeros(out_channels, dtype=torch.float32)
+        center[cls] = 1.0
+        x_cls = center + 0.05 * torch.randn(samples_per_class, out_channels)
+        xs.append(x_cls)
+        ys.append(torch.full((samples_per_class,), cls, dtype=torch.int64))
+
+    x = torch.cat(xs, dim=0)
+    y = torch.cat(ys, dim=0)
+    x = x / torch.norm(x, dim=1, keepdim=True)
+
+    model_py = MultiMMHDCInt(
+        num_classes=num_classes,
+        out_channels=out_channels,
+        lr=0.02,
+        C=12.0,
+        backend="python",
+        dtype=torch.int32,
+        hv_bitwidth=4,
+        fixed_point_frac_bits=16,
+        device="cpu",
+    )
+    model_cpp = MultiMMHDCInt(
+        num_classes=num_classes,
+        out_channels=out_channels,
+        lr=0.02,
+        C=12.0,
+        backend="cpp",
+        dtype=torch.int32,
+        hv_bitwidth=4,
+        fixed_point_frac_bits=16,
+        device="cpu",
+    )
+
+    x_q = model_py.quantize_hypervectors(x)
+
+    model_py.initialize(x_q, y)
+    model_cpp.prototypes.data = model_py.prototypes.data.clone()
+    model_cpp._prototypes_fp = model_py._prototypes_fp.clone()
+
+    for _ in range(12):
+        model_py.step(x_q, y)
+        model_cpp.step(x_q, y)
+
+        assert torch.equal(model_cpp.prototypes.data, model_py.prototypes.data), (
+            "Integer C++ backend prototypes diverged from Python backend"
+        )
+        assert torch.equal(model_cpp._prototypes_fp, model_py._prototypes_fp), (
+            "Integer C++ fixed-point accumulator diverged from Python backend"
         )

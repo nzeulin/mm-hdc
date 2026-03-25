@@ -1,4 +1,6 @@
 #include <torch/extension.h>
+#include <cmath>
+#include <vector>
 
 /*
 Optimised step procedure — global GEMM reformulation:
@@ -46,6 +48,49 @@ torch::Tensor step(torch::Tensor &x, torch::Tensor &y, torch::Tensor &prototypes
     return prototypes;
 }
 
+  torch::Tensor round_divide_int(const torch::Tensor &numer, int64_t denom) {
+    auto abs_q = torch::floor_divide(numer.abs() + denom / 2, denom);
+    auto sign = numer.sign().to(torch::kInt64);
+    return abs_q.to(torch::kInt64) * sign;
+  }
+
+  std::vector<torch::Tensor> step_int(
+    torch::Tensor &x,
+    torch::Tensor &y,
+    torch::Tensor &prototypes,
+    torch::Tensor &prototypes_fp,
+    double lr,
+    double C,
+    int64_t fixed_point_frac_bits,
+    int64_t dtype_min,
+    int64_t dtype_max) {
+
+    auto x_acc = x.to(torch::kInt64);
+    auto fp_scale = static_cast<int64_t>(1) << fixed_point_frac_bits;
+
+    auto p_acc = round_divide_int(prototypes_fp, fp_scale);
+
+    auto scores = torch::mm(x_acc, p_acc.t());
+    auto correct_scores = scores.gather(1, y.unsqueeze(1));
+
+    auto violated = (correct_scores - scores) < 2;
+    violated.scatter_(1, y.unsqueeze(1), torch::zeros_like(y.unsqueeze(1), torch::kBool));
+
+    auto W = -violated.to(torch::kInt64);
+    W.scatter_add_(1, y.unsqueeze(1), violated.sum(1, /*keepdim=*/true).to(torch::kInt64));
+    auto prototypes_update = torch::mm(W.t(), x_acc);
+
+    auto decay_q = static_cast<int64_t>(std::llround((1.0 - lr / C) * static_cast<double>(fp_scale)));
+    auto lr_q = static_cast<int64_t>(std::llround(lr * static_cast<double>(fp_scale)));
+
+    auto updated_fp = round_divide_int(decay_q * prototypes_fp, fp_scale) + lr_q * prototypes_update;
+    auto updated = round_divide_int(updated_fp, fp_scale);
+
+    auto clamped = torch::clamp(updated, dtype_min, dtype_max).to(prototypes.scalar_type());
+    return {clamped, updated_fp};
+  }
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("step", &step, "MM-HDC prototype update function");
+    m.def("step_int", &step_int, "MM-HDC integer prototype update function");
 }

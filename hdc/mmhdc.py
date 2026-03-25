@@ -100,8 +100,8 @@ class MultiMMHDCInt(MultiMMHDC):
             dtype=dtype,
         )
 
-        if self.backend != 'python':
-            raise ValueError("MultiMMHDCInt currently supports backend='python' only.")
+        if self.backend not in ['python', 'cpp']:
+            raise ValueError("MultiMMHDCInt currently supports backend in {'python', 'cpp'} only.")
         if self.dtype not in [torch.int8, torch.int16, torch.int32, torch.int64]:
             raise TypeError("MultiMMHDCInt expects integer dtype.")
         if hv_bitwidth < 2:
@@ -179,11 +179,13 @@ class MultiMMHDCInt(MultiMMHDC):
         self._prototypes_fp = self.prototypes.data.to(torch.int64) * fp_scale
 
     def step(self, x: torch.Tensor, y: torch.Tensor):
-        if self.backend != 'python':
-            raise ValueError("MultiMMHDCInt currently supports backend='python' only.")
-        return self._py_step(x, y)
+        if self.backend == 'python':
+            return self._py_step(x, y)
+        if self.backend == 'cpp':
+            return self._cpp_step(x, y)
+        raise ValueError(f"Unsupported backend: {self.backend}")
 
-    def _py_step(self, x: torch.Tensor, y: torch.Tensor):
+    def _prepare_int_inputs(self, x: torch.Tensor, y: torch.Tensor):
         x_orig_float = x if x.dtype in [torch.float32, torch.float64] else None
         if x.dtype in [torch.int8, torch.int16, torch.int32, torch.int64]:
             x_q = x.to(self.device, dtype=self.dtype)
@@ -191,6 +193,15 @@ class MultiMMHDCInt(MultiMMHDC):
             # Fallback for convenience; recommended usage quantizes once at input creation time.
             x_q = self.quantize_hypervectors(x.to(self.device))
         y_dev = y.to(self.device)
+
+        if self._prototypes_fp is None:
+            fp_scale = 1 << self.fixed_point_frac_bits
+            self._prototypes_fp = self.prototypes.data.to(torch.int64) * fp_scale
+
+        return x_orig_float, x_q, y_dev
+
+    def _py_step(self, x: torch.Tensor, y: torch.Tensor):
+        x_orig_float, x_q, y_dev = self._prepare_int_inputs(x, y)
 
         x_acc = x_q.to(torch.int64)
         fp_scale = 1 << self.fixed_point_frac_bits
@@ -224,6 +235,31 @@ class MultiMMHDCInt(MultiMMHDC):
 
         p_min, p_max = self._int_clip_bounds(self.dtype)
         self.prototypes.data = torch.clamp(updated, p_min, p_max).to(self.dtype)
+
+        if x_orig_float is not None:
+            return self.loss_dequantized(x_orig_float, y_dev)
+
+        hv_scale = (1 << (self.hv_bitwidth - 1)) - 1
+        return self.loss_dequantized(x_q.to(torch.float32) / float(hv_scale), y_dev)
+
+    def _cpp_step(self, x: torch.Tensor, y: torch.Tensor):
+        x_orig_float, x_q, y_dev = self._prepare_int_inputs(x, y)
+        p_min, p_max = self._int_clip_bounds(self.dtype)
+
+        updated, updated_fp = _mmhdc_cpp.step_int(
+            x_q,
+            y_dev,
+            self.prototypes.data,
+            self._prototypes_fp,
+            self.lr,
+            self.C,
+            self.fixed_point_frac_bits,
+            p_min,
+            p_max,
+        )
+
+        self.prototypes.data = updated.to(self.dtype)
+        self._prototypes_fp = updated_fp.to(torch.int64)
 
         if x_orig_float is not None:
             return self.loss_dequantized(x_orig_float, y_dev)
