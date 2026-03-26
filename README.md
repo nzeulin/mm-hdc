@@ -17,8 +17,9 @@ conda run -n mm-hdc python main.py --config configs/default_mnist_config.py
 Python-based backend (`_py_step` in `hdc/mmhdc.py`) should be used as a reference, ground-truth implementation only.
 
 ### Features to be implemented
-- [ ] Training procedure for fixed-point (integer-only) prototypes and hypervectors.
-- [ ] Implement C++ backend for fixed-point training procedure.
+- :no_entry: Training procedure for fixed-point (integer-only) prototypes and hypervectors. UPDATE: Keep it for later, I didn't see any significant speedups on my laptop CPU, and there are some problems with CUDA support.
+
+- :no_entry: Implement C++ backend for fixed-point training procedure.
 - [ ] Wrap MM-HDC as a Python package.
  
 ### Citation
