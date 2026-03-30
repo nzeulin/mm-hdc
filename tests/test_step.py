@@ -1,10 +1,6 @@
 import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -35,8 +31,8 @@ _TRANSFORM_BATCH_SIZE = _HDC_CFG.get("transform_batch_size", None)
 
 def _get_batch():
     X_raw, y_raw, _, _ = load_mnist("mnist")
-    X = torch.tensor(X_raw, dtype=torch.float32)
-    y = torch.tensor(y_raw, dtype=torch.int64)
+    X = X_raw.to(dtype=torch.float32)
+    y = y_raw.to(dtype=torch.int64)
 
     X_flat = X.reshape(X.shape[0], -1)
     transform = HDTransform(
@@ -70,7 +66,7 @@ def _make_model(backend: str, init_prototypes: torch.Tensor):
     return model
 
 
-def test_step_and_gradient_descent_losses_match():
+def test_step_and_gradient_descent_losses_match(output_plot: bool = False):
     X_hd, y_all, X_batch, y_batch = _get_batch()
 
     # Build one common initialization so every method starts identically.
@@ -143,24 +139,29 @@ def test_step_and_gradient_descent_losses_match():
             f"{diff_py_ref_t[step_idx].item():>12.6f}"
         )
 
-    output_dir = os.path.join(os.path.dirname(__file__), "output")
-    os.makedirs(output_dir, exist_ok=True)
-    plot_path = os.path.join(output_dir, "step_vs_gd_losses.png")
+    if output_plot:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
-    steps = range(1, num_steps + 1)
-    plt.figure(figsize=(9, 5))
-    plt.plot(steps, losses_gd_t.cpu().numpy(), label="SGD", marker="o")
-    plt.plot(steps, losses_cpp_t.cpu().numpy(), label="C++", marker="s")
-    plt.plot(steps, losses_py_opt_t.cpu().numpy(), label="Python optimized", marker="^")
-    plt.plot(steps, losses_py_ref_t.cpu().numpy(), label="Python reference", marker="d")
-    plt.xlabel("Step")
-    plt.ylabel("Loss")
-    plt.title("Step Procedure Loss Comparison")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(plot_path, dpi=150)
-    plt.close()
-    print(f"[step-loss-plot] saved: {plot_path}")
+        output_dir = os.path.join(os.path.dirname(__file__), "output")
+        os.makedirs(output_dir, exist_ok=True)
+        plot_path = os.path.join(output_dir, "step_vs_gd_losses.png")
+
+        steps = range(1, num_steps + 1)
+        plt.figure(figsize=(9, 5))
+        plt.plot(steps, losses_gd_t.cpu().numpy(), label="SGD", marker="o")
+        plt.plot(steps, losses_cpp_t.cpu().numpy(), label="C++", marker="s")
+        plt.plot(steps, losses_py_opt_t.cpu().numpy(), label="Python optimized", marker="^")
+        plt.plot(steps, losses_py_ref_t.cpu().numpy(), label="Python reference", marker="d")
+        plt.xlabel("Step")
+        plt.ylabel("Loss")
+        plt.title("Step Procedure Loss Comparison")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=150)
+        plt.close()
+        print(f"[step-loss-plot] saved: {plot_path}")
 
     assert torch.allclose(losses_cpp_t, losses_gd_t, atol=1e-4, rtol=1e-4), (
         "C++ step losses diverge from SGD. "

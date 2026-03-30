@@ -1,5 +1,5 @@
 from pathlib import Path
-import numpy as np
+import torch
 from torchvision import datasets
 
 def load_mnist(dataset: str = "mnist"):
@@ -19,9 +19,9 @@ def load_mnist(dataset: str = "mnist"):
     train_set = dataset_cls(root=str(data_root), train=True, download=True)
     test_set = dataset_cls(root=str(data_root), train=False, download=True)
 
-    X_train = train_set.data.numpy().astype(np.float32)
-    y_train = train_set.targets.numpy().astype(np.int64)
-    X_test = test_set.data.numpy().astype(np.float32)
-    y_test = test_set.targets.numpy().astype(np.int64)
+    X_train = train_set.data.to(dtype=torch.float32)
+    y_train = train_set.targets.to(dtype=torch.int64)
+    X_test = test_set.data.to(dtype=torch.float32)
+    y_test = test_set.targets.to(dtype=torch.int64)
 
     return X_train, y_train, X_test, y_test

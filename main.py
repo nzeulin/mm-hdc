@@ -66,8 +66,8 @@ def main(_):
 
     # Load and preprocess data
     X_train, y_train, X_test, y_test = load_mnist(config.dataset.name)
-    X_train = torch.tensor(X_train, dtype=dtype)
-    X_test = torch.tensor(X_test, dtype=dtype)
+    X_train = X_train.to(dtype=dtype)
+    X_test = X_test.to(dtype=dtype)
 
     lbl_enc = LabelEncoder().fit(y_train)
     y_train = torch.tensor(lbl_enc.transform(y_train), dtype=torch.int64)
