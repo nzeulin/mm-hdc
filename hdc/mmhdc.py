@@ -1,6 +1,6 @@
 import torch
 from torch.nn.functional import one_hot, relu
-from . import _mmhdc_cpp
+from ._cpp_backend import get_mmhdc_cpp
 
 class MultiMMHDC(torch.nn.Module):
     def __init__(self, num_classes: int, 
@@ -63,7 +63,8 @@ class MultiMMHDC(torch.nn.Module):
     def step(self, x: torch.Tensor, y: torch.Tensor):
         if self.backend == 'cpp':
             with torch.no_grad():
-                updated_prototypes = _mmhdc_cpp.step(x, y, self.prototypes, self.lr, self.C)
+                mmhdc_cpp = get_mmhdc_cpp()
+                updated_prototypes = mmhdc_cpp.step(x, y, self.prototypes, self.lr, self.C)
                 self.prototypes.copy_(updated_prototypes)
         elif self.backend == 'python':
             self._py_step(x, y)
