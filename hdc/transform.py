@@ -2,7 +2,7 @@ import torch
 import math
 from typing import Optional
 
-class HDTransform(torch.nn.Module):    
+class HDTransform(torch.nn.Module):
     def __init__(
         self,
         in_channels: int,
@@ -18,22 +18,26 @@ class HDTransform(torch.nn.Module):
         self.out_channels = out_channels
         self.batch_size = batch_size
         self.normalize = normalize
-        self.device = device
         self.dtype = dtype
 
         self._rng = torch.Generator(device="cpu")
         self._rng.manual_seed(seed)
-        self._two_pi = torch.tensor(2.0 * math.pi, dtype=self.dtype)
-        self._eps = torch.tensor(1e-8, dtype=self.dtype, device=self.device)
-
-        self._G = torch.nn.Parameter(
-            torch.randn(in_channels, out_channels, generator=self._rng, dtype=self.dtype),
-            requires_grad=False
-        ).to(self.device)
-        self._phi = torch.nn.Parameter(
-            torch.rand(out_channels, generator=self._rng, dtype=self.dtype).mul(self._two_pi),
-            requires_grad=False
-        ).to(self.device)
+        two_pi = torch.tensor(2.0 * math.pi, dtype=self.dtype)
+        self.register_buffer(
+            "_eps",
+            torch.tensor(1e-8, dtype=self.dtype, device=device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_G",
+            torch.randn(in_channels, out_channels, generator=self._rng, dtype=self.dtype).to(device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_phi",
+            torch.rand(out_channels, generator=self._rng, dtype=self.dtype).mul(two_pi).to(device),
+            persistent=False,
+        )
 
     def _transform(self, x: torch.Tensor):
         projection_matrix = self._G.unsqueeze(0).expand(x.size(0), -1, -1)
@@ -42,10 +46,10 @@ class HDTransform(torch.nn.Module):
         buf1 = torch.bmm(x.unsqueeze(1), projection_matrix).squeeze(1)
         buf2 = buf1 + self._phi
         return buf1.sin_() * buf2.cos_()
-    
-    def __call__(self, data: torch.Tensor):
+
+    def forward(self, data: torch.Tensor):
         with torch.no_grad():
-            data = data.to(device=self.device, dtype=self.dtype)
+            data = data.to(device=self._G.device, dtype=self.dtype)
             if self.normalize:
                 norms = torch.norm(data, dim=1, keepdim=True)
                 data = data / torch.maximum(norms, self._eps)
