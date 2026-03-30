@@ -12,7 +12,6 @@ def get_config():
     config.dataset = ConfigDict()
     dataset = config.dataset
     dataset.name = 'mnist'
-    dataset.mapping = 'onlinehd'  # HDC mapping
     dataset.num_classes = 10
     dataset.model_dim = 5_000
 
@@ -23,14 +22,11 @@ def get_config():
     training.batch_size = 1000
     training.num_epochs = 50
     training.eval_every = 1  # Evaluate every N epochs
-    training.checkpoint_every = 2  # Save checkpoint every N epochs
     training.num_experiments = 2
 
     # Paths configuration
     config.paths = ConfigDict()
     paths = config.paths
-    paths.checkpoints = 'checkpoints'
-    paths.checkpoints_meta = 'checkpoints_meta'
     paths.results = 'results'
     paths.configs = 'configs'
 

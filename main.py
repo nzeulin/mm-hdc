@@ -18,26 +18,16 @@ from hdc import HDTransform
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Path to configuration.")
 
-def save_checkpoint(checkpoint_path: str,
-                    model: torch.nn.Module,
-                    experiment: int,
-                    epoch: int,
-                    config: ConfigDict):
-    """Save model checkpoint."""
-    checkpoint_path = os.path.join(
-        checkpoint_path, f"{config.name}_exp{experiment}_epoch{epoch}.pt"
-    )
-    torch.save(model.state_dict(), checkpoint_path)
-
 def evaluate_model(model, X_test: torch.Tensor, y_test: torch.Tensor):
     """Evaluate model and return metrics."""
     with torch.no_grad():
         y_pred = model(X_test)
+        loss = model.loss(X_test, y_test).item()
         accuracy = (y_pred == y_test).float().mean().item()
 
         return {
             'accuracy': accuracy,
-            # 'loss': loss,
+            'loss': loss,
         }
 
 def load_model_config(config_path: str):
@@ -69,19 +59,15 @@ def main(_):
     if config is None:
         raise ValueError("Configuration file must be provided.")
 
-    checkpoints_dir = config.paths.checkpoints
-    checkpoints_meta_dir = config.paths.checkpoints_meta
     results_dir = config.paths.results
     dtype = config.dtype
 
-    os.makedirs(checkpoints_dir, exist_ok=True)
-    os.makedirs(checkpoints_meta_dir, exist_ok=True)
     os.makedirs(results_dir, exist_ok=True)
 
     # Load and preprocess data
     X_train, y_train, X_test, y_test = load_mnist(config.dataset.name)
-    X_train = torch.tensor(X_train, dtype=dtype)
-    X_test = torch.tensor(X_test, dtype=dtype)
+    X_train = X_train.to(dtype=dtype)
+    X_test = X_test.to(dtype=dtype)
 
     lbl_enc = LabelEncoder().fit(y_train)
     y_train = torch.tensor(lbl_enc.transform(y_train), dtype=torch.int64)
@@ -90,6 +76,7 @@ def main(_):
     # Load model config (single model only)
     assert len(config.model_config_paths) == 1, "Only one model config is supported."
     model_config = load_model_config(config.model_config_paths[0])
+    transform_batch_size = model_config.get("transform_batch_size", None)
 
     tracking = {}
     for exp_i in range(config.training.num_experiments):
@@ -101,11 +88,10 @@ def main(_):
         hd_transform = HDTransform(
             X_train_flat.shape[1],
             out_channels=config.dataset.model_dim,
-            batch_size=1024,
+            batch_size=transform_batch_size,
             seed=exp_i,
-            batch_norm=False,
+            normalize=bool(model_config.get("normalize", True)),
             device=config.device,
-            transform_type=config.dataset.mapping,
             dtype=dtype,
         )
         X_train_hd = hd_transform(X_train_flat)
@@ -147,11 +133,7 @@ def main(_):
                 experiment_results.append(epoch_metrics)
                 print_metrics_summary(epoch, exp_i, metrics)
 
-            if epoch % config.training.checkpoint_every == 0:
-                save_checkpoint(checkpoints_meta_dir, model, exp_i, epoch, config)
-
         tracking[f'experiment_{exp_i}'] = experiment_results
-        save_checkpoint(checkpoints_dir, model, exp_i, epoch, config)
 
     # Save final results
     torch.save(tracking, os.path.join(results_dir, '{}_experiment_results.pt'.format(config.name)))
