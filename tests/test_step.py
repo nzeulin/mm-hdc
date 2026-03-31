@@ -1,32 +1,20 @@
 import os
 import sys
-from importlib.util import module_from_spec, spec_from_file_location
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from configs.default_mnist_config import get_config as _get_main_config
+from configs.examples.mnist import get_config as _get_main_config
 from data import load_mnist
-from hdc import HDTransform
-from hdc.mmhdc import MultiMMHDC
+from mmhdc import MultiMMHDC
+from mmhdc.utils import HDTransform
 
 
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _MAIN_CFG = _get_main_config()
-
-
-def _load_hdc_config(rel_path: str):
-    abs_path = os.path.join(_REPO_ROOT, rel_path)
-    spec = spec_from_file_location("_hdc_config", abs_path)
-    mod = module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.get_config()
-
-
-_HDC_CFG = _load_hdc_config(_MAIN_CFG.model_config_paths[0])
-_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-_TRANSFORM_DTYPE = _HDC_CFG.get("transform_dtype", None) or torch.float32
-_TRANSFORM_BATCH_SIZE = _HDC_CFG.get("transform_batch_size", None)
+_MODEL_CFG = _MAIN_CFG.model
+_DEVICE = _MAIN_CFG.device
+_TRANSFORM_DTYPE = _MODEL_CFG.get("transform_dtype", None) or torch.float32
+_TRANSFORM_BATCH_SIZE = _MODEL_CFG.get("transform_batch_size", None)
 
 
 def _get_batch():
@@ -40,7 +28,7 @@ def _get_batch():
         out_channels=_MAIN_CFG.dataset.model_dim,
         seed=0,
         batch_size=_TRANSFORM_BATCH_SIZE,
-        normalize=bool(_HDC_CFG.get("normalize", True)),
+        normalize=bool(_MODEL_CFG.get("normalize", True)),
         device=_DEVICE,
         dtype=_TRANSFORM_DTYPE,
     )
@@ -56,8 +44,8 @@ def _make_model(backend: str, init_prototypes: torch.Tensor):
     model = MultiMMHDC(
         num_classes=_MAIN_CFG.dataset.num_classes,
         out_channels=_MAIN_CFG.dataset.model_dim,
-        lr=float(_HDC_CFG.learning_rate),
-        C=float(_HDC_CFG.C),
+        lr=float(_MODEL_CFG.learning_rate),
+        C=float(_MODEL_CFG.C),
         backend=backend,
         device=_DEVICE,
         dtype=torch.float32,
@@ -73,8 +61,8 @@ def test_step_and_gradient_descent_losses_match(output_plot: bool = False):
     init_model = MultiMMHDC(
         num_classes=_MAIN_CFG.dataset.num_classes,
         out_channels=_MAIN_CFG.dataset.model_dim,
-        lr=float(_HDC_CFG.learning_rate),
-        C=float(_HDC_CFG.C),
+        lr=float(_MODEL_CFG.learning_rate),
+        C=float(_MODEL_CFG.C),
         backend="python",
         device=_DEVICE,
         dtype=torch.float32,
@@ -92,7 +80,7 @@ def test_step_and_gradient_descent_losses_match(output_plot: bool = False):
         init_prototypes.detach().clone().to(_DEVICE),
         requires_grad=True,
     )
-    optimizer = torch.optim.SGD([model_gd.prototypes], lr=float(_HDC_CFG.learning_rate))
+    optimizer = torch.optim.SGD([model_gd.prototypes], lr=float(_MODEL_CFG.learning_rate))
 
     num_steps = 50
     losses_cpp = []

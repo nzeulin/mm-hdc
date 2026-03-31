@@ -1,5 +1,4 @@
 from functools import lru_cache
-import os
 from pathlib import Path
 
 
@@ -12,7 +11,7 @@ def get_mmhdc_cpp():
             name="mmhdc_cpp",
             extra_cflags=["-O3"],
             is_python_module=True,
-            sources=[os.path.join(Path(__file__).parent, "mmhdc.cpp")],
+            sources=[str(Path(__file__).resolve().parent / "cpp" / "mmhdc.cpp")],
         )
     except Exception as exc:
         raise RuntimeError(

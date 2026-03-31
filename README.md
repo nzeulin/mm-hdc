@@ -2,26 +2,28 @@
 
 This repository provides an implementation of the multi-class maximum-margin hyperdimensional computing (MM-HDC) classifier that adopts the optimization problem formulation of multi-class Weston-Watkins SVM to HDC.
 
-You can try running multi-class MM-HDC on MNIST dataset as follows:
+The algorithm is implemented in the `MultiMMHDC` class, which can be imported as:
+
+```python
+from mmhdc import MultiMMHDC
+from mmhdc.utils import HDTransform
+```
+
+You can install the package in editable mode and run the MNIST example as follows:
+
 ```bash
 git clone https://github.com/nzeulin/mm-hdc.git
 cd mm-hdc
-conda env create -n environment.yaml
-conda run -n mm-hdc python main.py --config configs/default_mnist_config.py
+python -m pip install --upgrade pip
+python -m pip install ".[examples]"
+python example.py --config configs/examples/mnist.py
 ```
 
 ### Current features
 - C++ backend (`libtorch`) to enable fast MM-HDC training.
 - Support of floating-point prototypes and hypervectors.
 
-Python-based backend (`_py_step` in `hdc/mmhdc.py`) should be used as a reference, ground-truth implementation only.
-
-### Features to be implemented
-:no_entry: Training procedure for fixed-point (integer-only) prototypes and hypervectors. UPDATE: Keep it for later, I didn't see any significant speedups on my laptop CPU, and there are some problems with CUDA support.
-
-:no_entry: Implement C++ backend for fixed-point training procedure.
-
-- [ ] Wrap MM-HDC as a Python package.
+Python-based backend (`_py_step` in `src/mmhdc/model.py`) should be used as a reference, ground-truth implementation only.
  
 ### Citation
 
