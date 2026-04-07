@@ -1,0 +1,6 @@
+absl-py
+matplotlib
+ml-collections
+ninja
+torchvision
+tqdm
