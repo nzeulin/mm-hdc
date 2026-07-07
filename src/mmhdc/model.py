@@ -6,7 +6,9 @@ class MultiMMHDC(torch.nn.Module):
     def __init__(self, num_classes: int, 
                  out_channels: int, 
                  lr: float = 1e-2, 
-                 C: float = 1.0, 
+                 C: float = 1.0,
+                 margin_width: float = 1.0,
+                 no_margin: bool = False,
                  device: str = 'cpu',
                  backend: str = 'python',
                  dtype: torch.dtype = torch.float32):
@@ -14,10 +16,18 @@ class MultiMMHDC(torch.nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.out_channels = out_channels
+        
         self.lr = lr
-        self.device = device
         self.C = C
+        self.margin_width = margin_width
+
+        self.no_margin = no_margin
+        if self.no_margin:
+            self.margin_width = 0
+            self.C = torch.inf
+
         self.backend = backend
+        self.device = device
         self.prototypes = torch.nn.parameter.Parameter(
             data=torch.zeros(num_classes, out_channels, dtype=dtype, device=device), 
             requires_grad=False
@@ -53,7 +63,7 @@ class MultiMMHDC(torch.nn.Module):
         y = y.reshape(-1)
         scores = X @ self.prototypes.T
         correct_scores = scores.gather(1, y.unsqueeze(1))
-        margins = relu(2 - (correct_scores - scores))
+        margins = relu(2 * self.margin_width - (correct_scores - scores))
         true_class_mask = one_hot(y, num_classes=self.num_classes).to(dtype=torch.bool)
         margins = margins.masked_fill(true_class_mask, 0.0)
 
@@ -64,7 +74,7 @@ class MultiMMHDC(torch.nn.Module):
         if self.backend == 'cpp':
             with torch.no_grad():
                 mmhdc_cpp = get_mmhdc_cpp()
-                updated_prototypes = mmhdc_cpp.step(x, y, self.prototypes, self.lr, self.C)
+                updated_prototypes = mmhdc_cpp.step(x, y, self.prototypes, self.lr, self.C, self.margin_width)
                 self.prototypes.copy_(updated_prototypes)
         elif self.backend == 'python':
             self._py_step(x, y)
@@ -81,7 +91,7 @@ class MultiMMHDC(torch.nn.Module):
                 x_cls = x[y == cls]
 
                 dot = x_cls @ (rolled_prototypes[0] - rolled_prototypes[1:]).T
-                hinge_loss = relu(2 - dot)
+                hinge_loss = relu(2 * self.margin_width - dot)
 
                 exceeding_margin = hinge_loss > 0
                 num_violations = exceeding_margin.sum(dim=1, dtype=x_cls.dtype)
@@ -98,7 +108,7 @@ class MultiMMHDC(torch.nn.Module):
             scores = x @ self.prototypes.T
             correct_scores = scores.gather(1, y.unsqueeze(1))
 
-            violated = (correct_scores - scores) < 2
+            violated = (correct_scores - scores) < 2 * self.margin_width
             violated.scatter_(1, y.unsqueeze(1), False)
 
             W = -violated.to(x.dtype)
