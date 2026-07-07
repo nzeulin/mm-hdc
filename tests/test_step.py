@@ -46,6 +46,7 @@ def _make_model(backend: str, init_prototypes: torch.Tensor):
         out_channels=_MAIN_CFG.dataset.model_dim,
         lr=float(_MODEL_CFG.learning_rate),
         C=float(_MODEL_CFG.C),
+        no_margin=False,
         backend=backend,
         device=_DEVICE,
         dtype=torch.float32,

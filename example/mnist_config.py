@@ -20,7 +20,9 @@ def get_config():
 
     config.model = ConfigDict()
     config.model.learning_rate = 1e-5
-    config.model.C = 500.0
+    config.model.C = torch.inf
+    config.model.margin_width = 0.25
+    config.model.no_margin = False
     config.model.normalize = True
     config.model.transform_batch_size = None
     config.model.transform_dtype = None

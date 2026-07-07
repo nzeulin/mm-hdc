@@ -1,8 +1,16 @@
 from absl import app, flags
 from ml_collections.config_flags import config_flags
 import os
+import sys
 from typing import Any, Dict
 import torch
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_SRC_ROOT = os.path.join(_REPO_ROOT, "src")
+for _path in (_REPO_ROOT, _SRC_ROOT):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
 from data import load_mnist
 from tqdm import tqdm
 
@@ -70,6 +78,8 @@ def run_experiment(config, exp_i: int, X_train: torch.Tensor, y_train: torch.Ten
         num_classes=config.dataset.num_classes,
         lr=config.model.learning_rate,
         C=config.model.C,
+        margin_width=config.model.margin_width,
+        no_margin=False,
         device=config.device,
         backend=config.model.backend,
         dtype=config.dtype,

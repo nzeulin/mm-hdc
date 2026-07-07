@@ -25,16 +25,20 @@ C++ backend is highly recommended to use, as it can significantly accelerate the
 ### Current features
 - C++ backend (`libtorch`) to enable fast MM-HDC training.
 - Support of floating-point prototypes and hypervectors.
+
+### Tips for best results
+
+Empirically, setting `C=torch.inf`, selecting relatively low `lr` (e.g., the default `lr=1e-5`), and fine-tuning `margin_width` between `[0..1]` leads to the highest classification accuracy and smooth convergence.
  
 ### Citation
 
-If you use this repository in your research, please cite it as software (paper in progress):
+If you use this repository in your research, please cite our paper:
 
 ```bibtex
-@software{zeulin_2026_mm_hdc,
-	author = {Zeulin, Nikita},
-	title = {MM-HDC: Maximum-Margin Hyperdimensional Computing},
-	year = {2026},
-	url = {https://github.com/nzeulin/mm-hdc}
+@article{zeulin2026large,
+  title={Large-Margin Hyperdimensional Computing: A Learning-Theoretical Perspective},
+  author={Zeulin, Nikita and Galinina, Olga and Balakrishnan, Ravikumar and Himayat, Nageen and Andreev, Sergey},
+  journal={arXiv preprint arXiv:2603.03830},
+  year={2026}
 }
 ```
